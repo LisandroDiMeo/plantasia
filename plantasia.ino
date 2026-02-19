@@ -2,6 +2,7 @@
 #include "cover_plantasia_mort.h"  // Include the cover image
 #include "monstera.h"              // Include the monstera plant image
 #include "drop.h"                  // Include the water drop icon
+#include "calendar.h"              // Include the calendar icon
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -105,6 +106,7 @@ void showPlantScreen() {
   }
 
   drawWaterStat(8);
+  drawCalendarStat(12);
 
   Serial.println("Plant screen displayed");
 }
@@ -132,4 +134,28 @@ void drawWaterStat(int level) {
   tft.setTextColor(TFT_WHITE);
   tft.setCursor(iconX + DROP_WIDTH + 4, iconY + (DROP_HEIGHT - 16) / 2);
   tft.print(level);
+}
+
+void drawCalendarStat(int days) {
+  int iconX = 240 - CALENDAR_WIDTH - 30;
+  int iconY = 240 - DROP_HEIGHT - CALENDAR_HEIGHT - 8;
+  // Draw calendar icon, skipping black (transparent) pixels
+  for (int y = 0; y < CALENDAR_HEIGHT; y++) {
+    for (int x = 0; x < CALENDAR_WIDTH; x++) {
+      uint16_t pixel = pgm_read_word(&calendar[y * CALENDAR_WIDTH + x]);
+      if (pixel != 0x0000) {
+        uint16_t r = (pixel & 0xF800) >> 11;
+        uint16_t g = (pixel & 0x07E0);
+        uint16_t b = (pixel & 0x001F);
+        uint16_t swapped = (b << 11) | g | r;
+        tft.drawPixel(iconX + x, iconY + y, swapped);
+      }
+    }
+  }
+
+  // Draw the days to the right of the icon
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_WHITE);
+  tft.setCursor(iconX + CALENDAR_WIDTH + 4, iconY + (CALENDAR_HEIGHT - 16) / 2);
+  tft.print(days);
 }
