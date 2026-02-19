@@ -1,5 +1,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <LittleFS.h>
 #include <TFT_eSPI.h>
 #include "cover_plantasia_mort.h"  // Include the cover image
 #include "monstera.h"              // Include the monstera plant image
@@ -16,8 +17,21 @@ ESP8266WebServer server(80);
 int waterLevel = 8;
 int calendarDays = 12;
 
+#define PLANT_PATH "/plant.bin"
+#define PLANT_SIZE (240 * 240 * 2)  // 115200 bytes
+
+File uploadFile;
+
 void setup() {
   Serial.begin(115200);
+
+  // Initialize LittleFS
+  if (!LittleFS.begin()) {
+    Serial.println("LittleFS mount failed, formatting...");
+    LittleFS.format();
+    LittleFS.begin();
+  }
+  Serial.println("LittleFS ready");
 
   tft.init();
   tft.setRotation(0);  // Portrait mode
@@ -84,10 +98,114 @@ void startAccessPoint() {
   delay(2000);
 }
 
+bool hasCustomPlant() {
+  return LittleFS.exists(PLANT_PATH);
+}
+
+// Draw the full plant image from LittleFS
+void drawPlantFromFS() {
+  File f = LittleFS.open(PLANT_PATH, "r");
+  if (!f) {
+    Serial.println("Failed to open plant file");
+    return;
+  }
+
+  uint8_t buf[480];  // one row = 240 pixels * 2 bytes
+  for (int y = 0; y < 240; y++) {
+    int bytesRead = f.read(buf, 480);
+    if (bytesRead != 480) break;
+    for (int x = 0; x < 240; x++) {
+      uint16_t pixel = (buf[x * 2] << 8) | buf[x * 2 + 1];
+      uint16_t r = (pixel & 0xF800) >> 11;
+      uint16_t g = (pixel & 0x07E0);
+      uint16_t b = (pixel & 0x001F);
+      tft.drawPixel(x, y, (b << 11) | g | r);
+    }
+  }
+  f.close();
+}
+
+// Draw a rectangular region of the plant from LittleFS
+void drawPlantRegionFromFS(int startX, int startY, int endX, int endY) {
+  File f = LittleFS.open(PLANT_PATH, "r");
+  if (!f) return;
+  uint8_t rowBuf[480];
+  for (int y = startY; y < endY; y++) {
+    f.seek(y * 480);
+    int bytesRead = f.read(rowBuf, 480);
+    if (bytesRead != 480) break;
+    for (int x = startX; x < endX; x++) {
+      uint16_t pixel = (rowBuf[x * 2] << 8) | rowBuf[x * 2 + 1];
+      uint16_t r = (pixel & 0xF800) >> 11;
+      uint16_t g = (pixel & 0x07E0);
+      uint16_t b = (pixel & 0x001F);
+      tft.drawPixel(x, y, (b << 11) | g | r);
+    }
+  }
+  f.close();
+}
+
 void setupRoutes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/update", HTTP_GET, handleUpdate);
   server.on("/status", HTTP_GET, handleStatus);
+
+  // Plant upload: raw body POST
+  server.on("/plant", HTTP_POST, handlePlantUploadComplete, handlePlantUploadData);
+
+  // Plant reset
+  server.on("/plant", HTTP_DELETE, handlePlantDelete);
+}
+
+void handlePlantUploadData() {
+  HTTPUpload& upload = server.upload();
+
+  if (upload.status == UPLOAD_FILE_START) {
+    uploadFile = LittleFS.open(PLANT_PATH, "w");
+    if (!uploadFile) {
+      Serial.println("Failed to create plant file");
+    }
+    Serial.println("Plant upload started");
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) {
+      uploadFile.write(upload.buf, upload.currentSize);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (uploadFile) {
+      uploadFile.close();
+      Serial.print("Plant upload complete, size: ");
+      Serial.println(upload.totalSize);
+    }
+  }
+}
+
+void handlePlantUploadComplete() {
+  // Verify the file size
+  File f = LittleFS.open(PLANT_PATH, "r");
+  if (!f) {
+    server.send(500, "application/json", "{\"error\":\"Failed to save plant\"}");
+    return;
+  }
+  size_t size = f.size();
+  f.close();
+
+  if (size != PLANT_SIZE) {
+    LittleFS.remove(PLANT_PATH);
+    server.send(400, "application/json",
+      "{\"error\":\"Invalid size. Expected " + String(PLANT_SIZE) + " bytes, got " + String(size) + "\"}");
+    return;
+  }
+
+  server.send(200, "application/json", "{\"ok\":true}");
+  showPlantScreen();
+}
+
+void handlePlantDelete() {
+  if (LittleFS.exists(PLANT_PATH)) {
+    LittleFS.remove(PLANT_PATH);
+  }
+  server.send(200, "application/json", "{\"ok\":true,\"plant\":\"default\"}");
+  showPlantScreen();
 }
 
 void handleRoot() {
@@ -102,6 +220,9 @@ void handleRoot() {
     "input[type=number]{width:60px;font-size:1.2em;padding:5px;background:#16213e;color:#fff;border:1px solid #7ec8a0;border-radius:4px;text-align:center}"
     "button{background:#7ec8a0;color:#1a1a2e;border:none;padding:12px 24px;font-size:1.1em;border-radius:8px;margin-top:15px;cursor:pointer}"
     "button:active{background:#5aa880}"
+    ".danger{background:#e74c3c;color:#fff}"
+    ".danger:active{background:#c0392b}"
+    "#status{margin-top:10px;font-size:0.9em;color:#aaa}"
     "</style></head><body>"
     "<h1>Plantasia</h1>"
     "<div class='stat'><span class='label'>Water:</span> <span id='w'>" + String(waterLevel) + "</span></div>"
@@ -111,6 +232,33 @@ void handleRoot() {
     "<div>Days: <input type='number' id='di' value='" + String(calendarDays) + "' min='0' max='99'></div><br>"
     "<button onclick=\"fetch('/update?water='+document.getElementById('wi').value+'&days='+document.getElementById('di').value)"
     ".then(r=>r.json()).then(d=>{document.getElementById('w').textContent=d.water;document.getElementById('d').textContent=d.days})\">Update</button>"
+    "<hr style='border-color:#333;margin:20px 0'>"
+    "<h2 style='color:#7ec8a0;font-size:1.2em'>Plant Image</h2>"
+    "<p style='font-size:0.85em;color:#aaa'>Upload a 240x240 RGB565 raw binary file (115,200 bytes)</p>"
+    "<input type='file' id='pf' accept='.bin,.raw' style='margin:10px 0'><br>"
+    "<button onclick='uploadPlant()'>Upload Plant</button> "
+    "<button class='danger' onclick='resetPlant()'>Reset to Default</button>"
+    "<div id='status'></div>"
+    "<script>"
+    "function uploadPlant(){"
+      "var f=document.getElementById('pf').files[0];"
+      "if(!f){document.getElementById('status').textContent='Select a file first';return;}"
+      "if(f.size!=115200){document.getElementById('status').textContent='File must be exactly 115,200 bytes (got '+f.size+')';return;}"
+      "var fd=new FormData();fd.append('plant',f,'plant.bin');"
+      "document.getElementById('status').textContent='Uploading...';"
+      "fetch('/plant',{method:'POST',body:fd})"
+      ".then(r=>r.json()).then(d=>{"
+        "document.getElementById('status').textContent=d.ok?'Upload complete!':'Error: '+(d.error||'unknown');"
+      "}).catch(e=>document.getElementById('status').textContent='Upload failed: '+e);"
+    "}"
+    "function resetPlant(){"
+      "if(!confirm('Reset to default monstera?'))return;"
+      "fetch('/plant',{method:'DELETE'})"
+      ".then(r=>r.json()).then(d=>{"
+        "document.getElementById('status').textContent='Reset to default plant';"
+      "}).catch(e=>document.getElementById('status').textContent='Reset failed: '+e);"
+    "}"
+    "</script>"
     "</body></html>";
   server.send(200, "text/html", html);
 }
@@ -140,16 +288,21 @@ void handleStatus() {
 }
 
 void refreshStats() {
-  // Redraw the monstera background in the stats area
+  // Redraw the plant background in the stats area
   int clearY = 240 - DROP_HEIGHT - CALENDAR_HEIGHT - 12;
   int clearX = 190;
-  for (int y = clearY; y < 240; y++) {
-    for (int x = clearX; x < 240; x++) {
-      uint16_t pixel = pgm_read_word(&monstera[y * COVER_WIDTH + x]);
-      uint16_t r = (pixel & 0xF800) >> 11;
-      uint16_t g = (pixel & 0x07E0);
-      uint16_t b = (pixel & 0x001F);
-      tft.drawPixel(x, y, (b << 11) | g | r);
+
+  if (hasCustomPlant()) {
+    drawPlantRegionFromFS(clearX, clearY, 240, 240);
+  } else {
+    for (int y = clearY; y < 240; y++) {
+      for (int x = clearX; x < 240; x++) {
+        uint16_t pixel = pgm_read_word(&monstera[y * COVER_WIDTH + x]);
+        uint16_t r = (pixel & 0xF800) >> 11;
+        uint16_t g = (pixel & 0x07E0);
+        uint16_t b = (pixel & 0x001F);
+        tft.drawPixel(x, y, (b << 11) | g | r);
+      }
     }
   }
 
@@ -184,20 +337,24 @@ void showCoverScreen() {
 void showPlantScreen() {
   tft.fillScreen(TFT_BLACK);
 
-  for (int y = 0; y < COVER_HEIGHT; y++) {
-    for (int x = 0; x < COVER_WIDTH; x++) {
-      uint16_t pixel = pgm_read_word(&monstera[y * COVER_WIDTH + x]);
-      uint16_t r = (pixel & 0xF800) >> 11;
-      uint16_t g = (pixel & 0x07E0);
-      uint16_t b = (pixel & 0x001F);
-      tft.drawPixel(x, y, (b << 11) | g | r);
+  if (hasCustomPlant()) {
+    drawPlantFromFS();
+    Serial.println("Custom plant displayed from LittleFS");
+  } else {
+    for (int y = 0; y < COVER_HEIGHT; y++) {
+      for (int x = 0; x < COVER_WIDTH; x++) {
+        uint16_t pixel = pgm_read_word(&monstera[y * COVER_WIDTH + x]);
+        uint16_t r = (pixel & 0xF800) >> 11;
+        uint16_t g = (pixel & 0x07E0);
+        uint16_t b = (pixel & 0x001F);
+        tft.drawPixel(x, y, (b << 11) | g | r);
+      }
     }
+    Serial.println("Default monstera displayed");
   }
 
   drawWaterStat(waterLevel);
   drawCalendarStat(calendarDays);
-
-  Serial.println("Plant screen displayed");
 }
 
 void drawWaterStat(int level) {
