@@ -1,3 +1,5 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 #include <TFT_eSPI.h>
 #include "cover_plantasia_mort.h"  // Include the cover image
 #include "monstera.h"              // Include the monstera plant image
@@ -6,94 +8,179 @@
 
 TFT_eSPI tft = TFT_eSPI();
 
+const char* ssid = "Plantasia";
+const char* password = "plantasia123";
+
+ESP8266WebServer server(80);
+
+int waterLevel = 8;
+int calendarDays = 12;
+
 void setup() {
   Serial.begin(115200);
-  
+
   tft.init();
   tft.setRotation(0);  // Portrait mode
   tft.fillScreen(TFT_BLACK);
-  
+
   // Show cover screen
   showCoverScreen();
-  
-  // Simulate connection process
-  simulateConnection();
-  
+
+  // Start WiFi AP and show connection progress
+  startAccessPoint();
+
+  // Set up web server routes
+  setupRoutes();
+  server.begin();
+  Serial.println("Web server started");
+
   // Display the plant
   showPlantScreen();
 }
 
 void loop() {
-  // Idle for now
-  delay(100);
+  server.handleClient();
 }
 
-void showCoverScreen() {
-  tft.fillScreen(TFT_BLACK);
-  
-  // Draw with RGB/BGR swap
-  for (int y = 0; y < COVER_HEIGHT; y++) {
-    for (int x = 0; x < COVER_WIDTH; x++) {
-      uint16_t pixel = pgm_read_word(&cover_image[y * COVER_WIDTH + x]);
-      
-      // Swap red and blue channels
-      // RGB565: RRRRR GGGGGG BBBBB
-      uint16_t r = (pixel & 0xF800) >> 11;  // Extract red (bits 15-11)
-      uint16_t g = (pixel & 0x07E0);        // Keep green (bits 10-5)
-      uint16_t b = (pixel & 0x001F);        // Extract blue (bits 4-0)
-      
-      // Reconstruct as BGR
-      uint16_t swapped = (b << 11) | g | r;
-      
-      tft.drawPixel(x, y, swapped);
-    }
-  }
-  
-  // Status text
-  tft.fillRect(0, 200, 240, 40, TFT_BLACK);
-  tft.setTextSize(2);
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.setCursor(40, 210);
-  tft.print("Connecting");
-  
-  Serial.println("Cover screen displayed");
-}
-void simulateConnection() {
-  // Animate dots while "connecting"
-  for (int i = 0; i < 3; i++) {  // 3 cycles
+void startAccessPoint() {
+  WiFi.softAP(ssid, password);
+
+  // Animate dots while AP starts
+  for (int i = 0; i < 3; i++) {
     for (int j = 0; j < 3; j++) {
       delay(500);
-      
-      // Clear dot area
+
       tft.fillRect(165, 200, 50, 20, TFT_BLACK);
-      
-      // Draw dots
+
       tft.setTextSize(2);
       tft.setTextColor(TFT_YELLOW, TFT_BLACK);
       tft.setCursor(165, 200);
       for (int k = 0; k <= j; k++) {
         tft.print(".");
       }
-      
-      Serial.print("Connecting");
+
+      Serial.print("Starting AP");
       for (int k = 0; k <= j; k++) Serial.print(".");
       Serial.println();
     }
   }
-  
-  // Connection success
-  tft.fillRect(0, 190, 240, 30, TFT_BLACK);
+
+  IPAddress ip = WiFi.softAPIP();
+  Serial.print("AP IP: ");
+  Serial.println(ip);
+
+  // Show IP on screen
+  tft.fillRect(0, 190, 240, 50, TFT_BLACK);
+  tft.setTextSize(2);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.setCursor(50, 200);
-  tft.println("Connected!");
-  
-  Serial.println("Connection successful!");
-  delay(1000);
+  tft.setCursor(20, 195);
+  tft.print("AP Ready!");
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setCursor(20, 220);
+  tft.print("IP: ");
+  tft.print(ip);
+
+  delay(2000);
+}
+
+void setupRoutes() {
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/update", HTTP_GET, handleUpdate);
+  server.on("/status", HTTP_GET, handleStatus);
+}
+
+void handleRoot() {
+  String html = "<!DOCTYPE html><html><head>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Plantasia</title>"
+    "<style>"
+    "body{font-family:sans-serif;background:#1a1a2e;color:#e0e0e0;text-align:center;padding:20px;margin:0}"
+    "h1{color:#7ec8a0}"
+    ".stat{font-size:1.5em;margin:15px 0}"
+    ".label{color:#aaa}"
+    "input[type=number]{width:60px;font-size:1.2em;padding:5px;background:#16213e;color:#fff;border:1px solid #7ec8a0;border-radius:4px;text-align:center}"
+    "button{background:#7ec8a0;color:#1a1a2e;border:none;padding:12px 24px;font-size:1.1em;border-radius:8px;margin-top:15px;cursor:pointer}"
+    "button:active{background:#5aa880}"
+    "</style></head><body>"
+    "<h1>Plantasia</h1>"
+    "<div class='stat'><span class='label'>Water:</span> <span id='w'>" + String(waterLevel) + "</span></div>"
+    "<div class='stat'><span class='label'>Days:</span> <span id='d'>" + String(calendarDays) + "</span></div>"
+    "<hr style='border-color:#333;margin:20px 0'>"
+    "<div>Water: <input type='number' id='wi' value='" + String(waterLevel) + "' min='0' max='99'></div><br>"
+    "<div>Days: <input type='number' id='di' value='" + String(calendarDays) + "' min='0' max='99'></div><br>"
+    "<button onclick=\"fetch('/update?water='+document.getElementById('wi').value+'&days='+document.getElementById('di').value)"
+    ".then(r=>r.json()).then(d=>{document.getElementById('w').textContent=d.water;document.getElementById('d').textContent=d.days})\">Update</button>"
+    "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+void handleUpdate() {
+  if (server.hasArg("water")) {
+    waterLevel = server.arg("water").toInt();
+  }
+  if (server.hasArg("days")) {
+    calendarDays = server.arg("days").toInt();
+  }
+
+  refreshStats();
+
+  String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays) + "}";
+  server.send(200, "application/json", json);
+
+  Serial.print("Updated - water: ");
+  Serial.print(waterLevel);
+  Serial.print(", days: ");
+  Serial.println(calendarDays);
+}
+
+void handleStatus() {
+  String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays) + "}";
+  server.send(200, "application/json", json);
+}
+
+void refreshStats() {
+  // Clear just the stats area (bottom-right corner)
+  int clearY = 240 - DROP_HEIGHT - CALENDAR_HEIGHT - 12;
+  tft.fillRect(190, clearY, 50, 240 - clearY, TFT_BLACK);
+
+  drawWaterStat(waterLevel);
+  drawCalendarStat(calendarDays);
+}
+
+void showCoverScreen() {
+  tft.fillScreen(TFT_BLACK);
+
+  // Draw with RGB/BGR swap
+  for (int y = 0; y < COVER_HEIGHT; y++) {
+    for (int x = 0; x < COVER_WIDTH; x++) {
+      uint16_t pixel = pgm_read_word(&cover_image[y * COVER_WIDTH + x]);
+
+      // Swap red and blue channels
+      // RGB565: RRRRR GGGGGG BBBBB
+      uint16_t r = (pixel & 0xF800) >> 11;  // Extract red (bits 15-11)
+      uint16_t g = (pixel & 0x07E0);        // Keep green (bits 10-5)
+      uint16_t b = (pixel & 0x001F);        // Extract blue (bits 4-0)
+
+      // Reconstruct as BGR
+      uint16_t swapped = (b << 11) | g | r;
+
+      tft.drawPixel(x, y, swapped);
+    }
+  }
+
+  // Status text
+  tft.fillRect(0, 200, 240, 40, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.setCursor(40, 210);
+  tft.print("Connecting");
+
+  Serial.println("Cover screen displayed");
 }
 
 void showPlantScreen() {
   tft.fillScreen(TFT_BLACK);
-
 
   for (int y = 0; y < COVER_HEIGHT; y++) {
     for (int x = 0; x < COVER_WIDTH; x++) {
@@ -105,8 +192,8 @@ void showPlantScreen() {
     }
   }
 
-  drawWaterStat(8);
-  drawCalendarStat(12);
+  drawWaterStat(waterLevel);
+  drawCalendarStat(calendarDays);
 
   Serial.println("Plant screen displayed");
 }
@@ -131,7 +218,7 @@ void drawWaterStat(int level) {
 
   // Draw the level number to the right of the icon
   tft.setTextSize(2);
-  tft.setTextColor(TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(iconX + DROP_WIDTH + 4, iconY + (DROP_HEIGHT - 16) / 2);
   tft.print(level);
 }
@@ -155,7 +242,7 @@ void drawCalendarStat(int days) {
 
   // Draw the days to the right of the icon
   tft.setTextSize(2);
-  tft.setTextColor(TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setCursor(iconX + CALENDAR_WIDTH + 4, iconY + (CALENDAR_HEIGHT - 16) / 2);
   tft.print(days);
 }
