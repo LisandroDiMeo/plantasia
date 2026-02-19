@@ -140,9 +140,18 @@ void handleStatus() {
 }
 
 void refreshStats() {
-  // Clear just the stats area (bottom-right corner)
+  // Redraw the monstera background in the stats area
   int clearY = 240 - DROP_HEIGHT - CALENDAR_HEIGHT - 12;
-  tft.fillRect(190, clearY, 50, 240 - clearY, TFT_BLACK);
+  int clearX = 190;
+  for (int y = clearY; y < 240; y++) {
+    for (int x = clearX; x < 240; x++) {
+      uint16_t pixel = pgm_read_word(&monstera[y * COVER_WIDTH + x]);
+      uint16_t r = (pixel & 0xF800) >> 11;
+      uint16_t g = (pixel & 0x07E0);
+      uint16_t b = (pixel & 0x001F);
+      tft.drawPixel(x, y, (b << 11) | g | r);
+    }
+  }
 
   drawWaterStat(waterLevel);
   drawCalendarStat(calendarDays);
@@ -168,13 +177,6 @@ void showCoverScreen() {
       tft.drawPixel(x, y, swapped);
     }
   }
-
-  // Status text
-  tft.fillRect(0, 200, 240, 40, TFT_BLACK);
-  tft.setTextSize(2);
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.setCursor(40, 210);
-  tft.print("Connecting");
 
   Serial.println("Cover screen displayed");
 }
@@ -218,7 +220,7 @@ void drawWaterStat(int level) {
 
   // Draw the level number to the right of the icon
   tft.setTextSize(2);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
   tft.setCursor(iconX + DROP_WIDTH + 4, iconY + (DROP_HEIGHT - 16) / 2);
   tft.print(level);
 }
@@ -242,7 +244,7 @@ void drawCalendarStat(int days) {
 
   // Draw the days to the right of the icon
   tft.setTextSize(2);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
   tft.setCursor(iconX + CALENDAR_WIDTH + 4, iconY + (CALENDAR_HEIGHT - 16) / 2);
   tft.print(days);
 }
