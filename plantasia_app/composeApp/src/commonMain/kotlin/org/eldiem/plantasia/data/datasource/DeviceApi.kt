@@ -33,7 +33,7 @@ class DeviceApi {
         }.body()
     }
 
-    suspend fun uploadPlant(imageBytes: ByteArray, onProgress: (Float) -> Unit) {
+    suspend fun uploadPlant(imageBytes: ByteArray, plantId: String, onProgress: (Float) -> Unit) {
         client.submitFormWithBinaryData(
             url = "$BASE_URL/plant",
             formData = formData {
@@ -43,6 +43,9 @@ class DeviceApi {
                 })
             }
         ) {
+            url {
+                parameters.append("plantId", plantId)
+            }
             onUpload { bytesSentTotal, contentLength ->
                 if (contentLength != null) {
                     if (contentLength > 0) {
@@ -51,6 +54,16 @@ class DeviceApi {
                 }
             }
         }
+    }
+
+    suspend fun syncTime(timestamp: Long): DeviceStatus {
+        return client.get("$BASE_URL/sync") {
+            parameter("timestamp", timestamp)
+        }.body()
+    }
+
+    suspend fun water(): DeviceStatus {
+        return client.post("$BASE_URL/water").body()
     }
 
     suspend fun deletePlant() {

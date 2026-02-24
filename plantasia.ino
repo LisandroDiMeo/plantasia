@@ -14,8 +14,15 @@ const char* password = "plantasia123";
 
 ESP8266WebServer server(80);
 
-int waterLevel = 8;
-int calendarDays = 12;
+#define STATE_PATH "/state.txt"
+
+unsigned long birthdayTimestamp = 0;   // Unix seconds when plant was born
+unsigned long lastSyncTimestamp = 0;   // Last unix timestamp from app
+unsigned long lastSyncMillis = 0;      // millis() at last sync
+int waterLevel = 0;
+int calendarDays = 0;
+String plantId = "";                   // ID of the plant currently on the device
+unsigned long lastWaterTimestamp = 0;  // Unix seconds of last watering
 
 #define PLANT_PATH "/plant.bin"
 #define PLANT_SIZE (240 * 240 * 2)  // 115200 bytes
@@ -33,6 +40,9 @@ void setup() {
     LittleFS.begin();
   }
   Serial.println("LittleFS ready");
+
+  loadState();
+  calendarDays = computeDays();
 
   tft.init();
   tft.setRotation(0);  // Portrait mode
@@ -146,10 +156,51 @@ void drawPlantRegionFromFS(int startX, int startY, int endX, int endY) {
   f.close();
 }
 
+void saveState() {
+  File f = LittleFS.open(STATE_PATH, "w");
+  if (!f) {
+    Serial.println("Failed to save state");
+    return;
+  }
+  f.println(birthdayTimestamp);
+  f.println(waterLevel);
+  f.println(lastSyncTimestamp);
+  f.println(plantId);
+  f.println(lastWaterTimestamp);
+  f.close();
+  Serial.println("State saved");
+}
+
+void loadState() {
+  File f = LittleFS.open(STATE_PATH, "r");
+  if (!f) {
+    Serial.println("No state file, using defaults");
+    return;
+  }
+  birthdayTimestamp = f.readStringUntil('\n').toInt();
+  waterLevel = f.readStringUntil('\n').toInt();
+  lastSyncTimestamp = f.readStringUntil('\n').toInt();
+  plantId = f.readStringUntil('\n');
+  plantId.trim();
+  lastWaterTimestamp = strtoul(f.readStringUntil('\n').c_str(), NULL, 10);
+  f.close();
+  lastSyncMillis = millis();
+  Serial.println("State loaded");
+}
+
+int computeDays() {
+  if (birthdayTimestamp == 0) return 0;
+  unsigned long estimatedNow = lastSyncTimestamp + ((millis() - lastSyncMillis) / 1000);
+  return (int)((estimatedNow - birthdayTimestamp) / 86400UL);
+}
+
 void setupRoutes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/update", HTTP_GET, handleUpdate);
   server.on("/status", HTTP_GET, handleStatus);
+  server.on("/sync", HTTP_GET, handleSync);
+  server.on("/water", HTTP_POST, handleWater);
+  server.on("/plant-id", HTTP_GET, handlePlantId);
 
   // Plant upload: raw body POST
   server.on("/plant", HTTP_POST, handlePlantUploadComplete, handlePlantUploadData);
@@ -207,6 +258,18 @@ void handlePlantUploadComplete() {
     return;
   }
 
+  // Store the plant ID and reset stats for the new plant
+  if (server.hasArg("plantId")) {
+    plantId = server.arg("plantId");
+  }
+  waterLevel = 0;
+  calendarDays = 0;
+  lastWaterTimestamp = 0;
+  birthdayTimestamp = 0;
+  saveState();
+  Serial.print("Plant uploaded, ID: ");
+  Serial.println(plantId);
+
   server.send(200, "application/json", "{\"ok\":true}");
   Serial.print("About to show uploaded plant...");
   showPlantScreen();
@@ -216,6 +279,8 @@ void handlePlantDelete() {
   if (LittleFS.exists(PLANT_PATH)) {
     LittleFS.remove(PLANT_PATH);
   }
+  plantId = "";
+  saveState();
   server.send(200, "application/json", "{\"ok\":true,\"plant\":\"default\"}");
   showPlantScreen();
 }
@@ -237,13 +302,12 @@ void handleRoot() {
     "#status{margin-top:10px;font-size:0.9em;color:#aaa}"
     "</style></head><body>"
     "<h1>Plantasia</h1>"
+    "<div class='stat'><span class='label'>Plant:</span> <span id='pid'>" + (plantId.length() > 0 ? plantId : "<i>none</i>") + "</span></div>"
     "<div class='stat'><span class='label'>Water:</span> <span id='w'>" + String(waterLevel) + "</span></div>"
-    "<div class='stat'><span class='label'>Days:</span> <span id='d'>" + String(calendarDays) + "</span></div>"
+    "<div class='stat'><span class='label'>Days:</span> <span id='d'>" + String(calendarDays) + "</span> <span style='font-size:0.6em;color:#aaa'>(auto-calculated)</span></div>"
     "<hr style='border-color:#333;margin:20px 0'>"
-    "<div>Water: <input type='number' id='wi' value='" + String(waterLevel) + "' min='0' max='99'></div><br>"
-    "<div>Days: <input type='number' id='di' value='" + String(calendarDays) + "' min='0' max='99'></div><br>"
-    "<button onclick=\"fetch('/update?water='+document.getElementById('wi').value+'&days='+document.getElementById('di').value)"
-    ".then(r=>r.json()).then(d=>{document.getElementById('w').textContent=d.water;document.getElementById('d').textContent=d.days})\">Update</button>"
+    "<button id='wb' onclick=\"doWater()\">Water Plant</button>"
+    "<div id='wstatus' style='margin-top:8px;font-size:0.9em;color:#aaa'></div>"
     "<hr style='border-color:#333;margin:20px 0'>"
     "<h2 style='color:#7ec8a0;font-size:1.2em'>Plant Image</h2>"
     "<p style='font-size:0.85em;color:#aaa'>Upload a 240x240 RGB565 raw binary file (115,200 bytes)</p>"
@@ -252,6 +316,36 @@ void handleRoot() {
     "<button class='danger' onclick='resetPlant()'>Reset to Default</button>"
     "<div id='status'></div>"
     "<script>"
+    "var lwt=" + String(lastWaterTimestamp) + ";"
+    "var lst=" + String(lastSyncTimestamp) + ";"
+    "function checkWaterBtn(){"
+      "if(lwt>0){"
+        "var now=lst+Math.floor((Date.now()-performance.timing.navigationStart)/1000);"
+        "var diff=now-lwt;"
+        "if(diff<86400){"
+          "document.getElementById('wb').disabled=true;"
+          "var h=Math.floor((86400-diff)/3600);"
+          "document.getElementById('wstatus').textContent='Watered today. Next in ~'+h+'h';"
+          "return;"
+        "}"
+      "}"
+      "document.getElementById('wb').disabled=false;"
+      "document.getElementById('wstatus').textContent='';"
+    "}"
+    "checkWaterBtn();"
+    "function doWater(){"
+      "fetch('/water',{method:'POST'}).then(r=>r.json()).then(d=>{"
+        "if(d.error){"
+          "document.getElementById('wstatus').textContent='Already watered today';"
+          "document.getElementById('wb').disabled=true;"
+        "}else{"
+          "document.getElementById('w').textContent=d.water;"
+          "document.getElementById('d').textContent=d.days;"
+          "lwt=d.lastWaterTimestamp;"
+          "checkWaterBtn();"
+        "}"
+      "});"
+    "}"
     "function uploadPlant(){"
       "var f=document.getElementById('pf').files[0];"
       "if(!f){document.getElementById('status').textContent='Select a file first';return;}"
@@ -295,7 +389,62 @@ void handleUpdate() {
 }
 
 void handleStatus() {
-  String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays) + "}";
+  calendarDays = computeDays();
+  String json = "{\"water\":" + String(waterLevel)
+    + ",\"days\":" + String(calendarDays)
+    + ",\"plantId\":\"" + plantId + "\""
+    + ",\"lastWaterTimestamp\":" + String(lastWaterTimestamp) + "}";
+  server.send(200, "application/json", json);
+}
+
+void handleSync() {
+  if (!server.hasArg("timestamp")) {
+    server.send(400, "application/json", "{\"error\":\"missing timestamp\"}");
+    return;
+  }
+  unsigned long ts = strtoul(server.arg("timestamp").c_str(), NULL, 10);
+  lastSyncTimestamp = ts;
+  lastSyncMillis = millis();
+
+  if (birthdayTimestamp == 0) {
+    birthdayTimestamp = ts;
+    Serial.println("Birthday set to: " + String(birthdayTimestamp));
+  }
+
+  calendarDays = computeDays();
+  saveState();
+  refreshStats();
+
+  String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays)
+    + ",\"birthday\":" + String(birthdayTimestamp)
+    + ",\"plantId\":\"" + plantId + "\""
+    + ",\"lastWaterTimestamp\":" + String(lastWaterTimestamp) + "}";
+  server.send(200, "application/json", json);
+}
+
+void handleWater() {
+  unsigned long estimatedNow = lastSyncTimestamp + ((millis() - lastSyncMillis) / 1000);
+
+  if (lastWaterTimestamp > 0 && (estimatedNow - lastWaterTimestamp) < 86400UL) {
+    unsigned long nextWaterIn = 86400UL - (estimatedNow - lastWaterTimestamp);
+    String json = "{\"error\":\"already_watered_today\",\"nextWaterIn\":" + String(nextWaterIn) + "}";
+    server.send(429, "application/json", json);
+    return;
+  }
+
+  waterLevel++;
+  lastWaterTimestamp = estimatedNow;
+  calendarDays = computeDays();
+  saveState();
+  refreshStats();
+
+  String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays)
+    + ",\"lastWaterTimestamp\":" + String(lastWaterTimestamp) + "}";
+  server.send(200, "application/json", json);
+}
+
+void handlePlantId() {
+  String json = "{\"plantId\":\"" + plantId + "\"}";
   server.send(200, "application/json", json);
 }
 

@@ -5,5 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class DeviceStatus(
     val water: Int,
-    val days: Int
+    val days: Int,
+    val plantId: String = "",
+    val lastWaterTimestamp: Long = 0
 )

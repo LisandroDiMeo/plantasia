@@ -112,6 +112,13 @@ fun UploadScreen(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
+                        onClick = { viewModel.retry() },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Retry")
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
                         onClick = onDone,
                         shape = RoundedCornerShape(12.dp)
                     ) {

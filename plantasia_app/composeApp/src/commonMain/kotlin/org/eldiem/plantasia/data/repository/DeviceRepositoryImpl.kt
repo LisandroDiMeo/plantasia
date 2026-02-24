@@ -13,8 +13,14 @@ class DeviceRepositoryImpl(
     override suspend fun updateStatus(water: Int, days: Int): DeviceStatus =
         api.updateStatus(water, days)
 
-    override suspend fun uploadPlant(imageBytes: ByteArray, onProgress: (Float) -> Unit) =
-        api.uploadPlant(imageBytes, onProgress)
+    override suspend fun syncTime(timestamp: Long): DeviceStatus =
+        api.syncTime(timestamp)
+
+    override suspend fun water(): DeviceStatus =
+        api.water()
+
+    override suspend fun uploadPlant(imageBytes: ByteArray, plantId: String, onProgress: (Float) -> Unit) =
+        api.uploadPlant(imageBytes, plantId, onProgress)
 
     override suspend fun deletePlant() = api.deletePlant()
 }

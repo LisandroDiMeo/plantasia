@@ -36,10 +36,23 @@ class PlantDetailViewModel(private val plantId: String) : ViewModel() {
     private fun loadStatus() {
         viewModelScope.launch {
             try {
-                _deviceStatus.value = deviceRepository.getStatus()
+                val timestamp = kotlin.time.Clock.System.now().epochSeconds
+                _deviceStatus.value = deviceRepository.syncTime(timestamp)
                 _statusError.value = null
             } catch (_: Exception) {
                 _statusError.value = "Not connected to device"
+            }
+        }
+    }
+
+    fun water() {
+        viewModelScope.launch {
+            try {
+                _deviceStatus.value = deviceRepository.water()
+                _statusError.value = null
+            } catch (e: Exception) {
+                val message = e.message ?: "Failed to water plant"
+                _statusError.value = if ("429" in message) "Already watered today" else message
             }
         }
     }

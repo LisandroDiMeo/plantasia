@@ -27,6 +27,8 @@ class UploadViewModel(private val plantId: String) : ViewModel() {
     private val _uploadState = MutableStateFlow<UploadState>(UploadState.Preparing)
     val uploadState: StateFlow<UploadState> = _uploadState
 
+    private var lastBitmap: ImageBitmap? = null
+
     init {
         loadPlant()
     }
@@ -38,11 +40,12 @@ class UploadViewModel(private val plantId: String) : ViewModel() {
     }
 
     fun upload(bitmap: ImageBitmap) {
+        lastBitmap = bitmap
         viewModelScope.launch {
             try {
                 _uploadState.value = UploadState.Uploading(0f)
                 val rgb565Data = ImageConverter.bitmapToRgb565(bitmap)
-                deviceRepository.uploadPlant(rgb565Data) { progress ->
+                deviceRepository.uploadPlant(rgb565Data, plantId) { progress ->
                     _uploadState.value = UploadState.Uploading(progress)
                 }
                 _uploadState.value = UploadState.Success
@@ -50,5 +53,9 @@ class UploadViewModel(private val plantId: String) : ViewModel() {
                 _uploadState.value = UploadState.Error(e.message ?: "Upload failed")
             }
         }
+    }
+
+    fun retry() {
+        lastBitmap?.let { upload(it) }
     }
 }

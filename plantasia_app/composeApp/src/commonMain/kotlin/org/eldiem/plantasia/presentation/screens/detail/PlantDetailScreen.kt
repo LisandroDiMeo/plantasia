@@ -88,24 +88,20 @@ fun PlantDetailScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Device status card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Device Status",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        if (statusError != null) {
+                // Device status card — only show when this plant matches the device
+                val isMatchingPlant = deviceStatus != null && deviceStatus!!.plantId == currentPlant.id
+
+                if (isMatchingPlant) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = statusError!!,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium
+                                text = "Device Status",
+                                style = MaterialTheme.typography.titleMedium
                             )
-                        } else if (deviceStatus != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -125,8 +121,30 @@ fun PlantDetailScreen(
                                     Text("Days: ${deviceStatus!!.days}")
                                 }
                             }
-                        } else {
-                            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            val nowEpoch = kotlin.time.Clock.System.now().epochSeconds
+                            val wateredRecently = deviceStatus!!.lastWaterTimestamp > 0 &&
+                                (nowEpoch - deviceStatus!!.lastWaterTimestamp) < 86400
+
+                            if (wateredRecently) {
+                                Button(
+                                    onClick = {},
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    enabled = false
+                                ) {
+                                    Text("Watered today")
+                                }
+                            } else {
+                                Button(
+                                    onClick = { viewModel.water() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("\uD83D\uDCA7 Water Plant")
+                                }
+                            }
                         }
                     }
                 }
