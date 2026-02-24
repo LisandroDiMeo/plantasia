@@ -21,6 +21,7 @@ int calendarDays = 12;
 #define PLANT_SIZE (240 * 240 * 2)  // 115200 bytes
 
 File uploadFile;
+size_t plantBytesWritten = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -161,6 +162,7 @@ void handlePlantUploadData() {
   HTTPUpload& upload = server.upload();
 
   if (upload.status == UPLOAD_FILE_START) {
+    plantBytesWritten = 0;
     uploadFile = LittleFS.open(PLANT_PATH, "w");
     if (!uploadFile) {
       Serial.println("Failed to create plant file");
@@ -168,21 +170,28 @@ void handlePlantUploadData() {
     Serial.println("Plant upload started");
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (uploadFile) {
-      uploadFile.write(upload.buf, upload.currentSize);
+      size_t remaining = PLANT_SIZE - plantBytesWritten;
+      size_t toWrite = (upload.currentSize < remaining) ? upload.currentSize : remaining;
+      if (toWrite > 0) {
+        uploadFile.write(upload.buf, toWrite);
+        plantBytesWritten += toWrite;
+      }
     }
   } else if (upload.status == UPLOAD_FILE_END) {
     if (uploadFile) {
       uploadFile.close();
       Serial.print("Plant upload complete, size: ");
-      Serial.println(upload.totalSize);
+      Serial.println(plantBytesWritten);
     }
   }
 }
 
 void handlePlantUploadComplete() {
   // Verify the file size
+  Serial.print("Handling plant upload complete...");
   File f = LittleFS.open(PLANT_PATH, "r");
   if (!f) {
+    Serial.print("File does not exist");
     server.send(500, "application/json", "{\"error\":\"Failed to save plant\"}");
     return;
   }
@@ -193,10 +202,13 @@ void handlePlantUploadComplete() {
     LittleFS.remove(PLANT_PATH);
     server.send(400, "application/json",
       "{\"error\":\"Invalid size. Expected " + String(PLANT_SIZE) + " bytes, got " + String(size) + "\"}");
+    Serial.print("Invalid size of plant: ");
+    Serial.println(String(size));
     return;
   }
 
   server.send(200, "application/json", "{\"ok\":true}");
+  Serial.print("About to show uploaded plant...");
   showPlantScreen();
 }
 
@@ -336,8 +348,10 @@ void showCoverScreen() {
 
 void showPlantScreen() {
   tft.fillScreen(TFT_BLACK);
-
-  if (hasCustomPlant()) {
+  bool customPlantAvailable = hasCustomPlant();
+  Serial.print("Custom plant available: ");
+  Serial.println(String(customPlantAvailable));
+  if (customPlantAvailable) {
     drawPlantFromFS();
     Serial.println("Custom plant displayed from LittleFS");
   } else {

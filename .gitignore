@@ -1,0 +1,43 @@
+# Arduino
+*.elf
+*.hex
+*.bin
+*.map
+build/
+libraries/
+
+# Logs
+log.txt
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compose Multiplatform / Gradle (plantasia_app)
+plantasia_app/.gradle/
+plantasia_app/build/
+plantasia_app/**/build/
+!plantasia_app/src/**/build/
+plantasia_app/local.properties
+plantasia_app/.idea/
+plantasia_app/.kotlin/
+plantasia_app/captures/
+plantasia_app/.externalNativeBuild/
+plantasia_app/.cxx/
+plantasia_app/node_modules/
+
+# Kotlin
+*.iml
+
+# Xcode
+plantasia_app/xcuserdata/
+plantasia_app/**/*.xcodeproj/*
+!plantasia_app/**/*.xcodeproj/project.pbxproj
+!plantasia_app/**/*.xcodeproj/xcshareddata/
+!plantasia_app/**/*.xcodeproj/project.xcworkspace/
+!plantasia_app/**/*.xcworkspace/contents.xcworkspacedata
+plantasia_app/**/xcshareddata/WorkspaceSettings.xcsettings
+
+# CocoaPods
+plantasia_app/iosApp/Pods/

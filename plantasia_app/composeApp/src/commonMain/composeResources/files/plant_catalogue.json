@@ -1,0 +1,26 @@
+[
+  {
+    "id": "monstera",
+    "name": "Monstera Deliciosa",
+    "description": "The Swiss Cheese Plant, known for its iconic split leaves. Native to Central American rainforests.",
+    "imageRes": "monstera"
+  },
+  {
+    "id": "succulent",
+    "name": "Echeveria",
+    "description": "A rosette-forming succulent with fleshy, waxy leaves. Low maintenance and drought tolerant.",
+    "imageRes": "succulent"
+  },
+  {
+    "id": "fern",
+    "name": "Boston Fern",
+    "description": "A lush, feathery fern with arching fronds. Loves humidity and indirect light.",
+    "imageRes": "fern"
+  },
+  {
+    "id": "rubber_plant",
+    "name": "Rubber Plant",
+    "description": "Ficus elastica, a hardy houseplant with thick, glossy dark green leaves. Easy to care for and great for purifying air.",
+    "imageRes": "rubber_plant"
+  }
+]
