@@ -9,29 +9,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import org.eldiem.plantasia.presentation.screens.catalogue.plantDrawableMap
 import org.jetbrains.compose.resources.imageResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UploadScreen(
-    plantId: String,
+    uiState: UploadUiState,
+    onUpload: (ImageBitmap) -> Unit,
+    onRetry: () -> Unit,
     onDone: () -> Unit,
-    viewModel: UploadViewModel = viewModel { UploadViewModel(plantId) }
+    isInteractive: Boolean = true
 ) {
-    val plant by viewModel.plant.collectAsState()
-    val uploadState by viewModel.uploadState.collectAsState()
-
     // Load the bitmap once and trigger upload
-    val drawableRes = plant?.imageRes?.let { plantDrawableMap[it] }
+    val drawableRes = uiState.plant?.imageRes?.let { plantDrawableMap[it] }
     var uploadStarted by remember { mutableStateOf(false) }
 
     if (drawableRes != null && !uploadStarted) {
         val bitmap: ImageBitmap = imageResource(drawableRes)
         LaunchedEffect(bitmap) {
             uploadStarted = true
-            viewModel.upload(bitmap)
+            onUpload(bitmap)
         }
     }
 
@@ -50,7 +48,7 @@ fun UploadScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            plant?.let {
+            uiState.plant?.let {
                 Text(
                     text = it.name,
                     style = MaterialTheme.typography.headlineSmall
@@ -68,7 +66,7 @@ fun UploadScreen(
                 Spacer(modifier = Modifier.height(32.dp))
             }
 
-            when (val state = uploadState) {
+            when (val state = uiState.uploadState) {
                 is UploadState.Preparing -> {
                     Text("Preparing image...")
                     Spacer(modifier = Modifier.height(16.dp))
@@ -93,7 +91,8 @@ fun UploadScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
                         onClick = onDone,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = isInteractive
                     ) {
                         Text("Back to Catalogue")
                     }
@@ -112,15 +111,17 @@ fun UploadScreen(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
-                        onClick = { viewModel.retry() },
-                        shape = RoundedCornerShape(12.dp)
+                        onClick = onRetry,
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = isInteractive
                     ) {
                         Text("Retry")
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedButton(
                         onClick = onDone,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = isInteractive
                     ) {
                         Text("Back to Catalogue")
                     }

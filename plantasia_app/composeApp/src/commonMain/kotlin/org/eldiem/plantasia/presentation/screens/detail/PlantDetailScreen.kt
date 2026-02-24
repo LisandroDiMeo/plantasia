@@ -7,33 +7,27 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import org.eldiem.plantasia.presentation.screens.catalogue.plantDrawableMap
 import org.jetbrains.compose.resources.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlantDetailScreen(
-    plantId: String,
+    uiState: PlantDetailUiState,
     onSendClick: (String) -> Unit,
+    onWater: () -> Unit,
     onBack: () -> Unit,
-    viewModel: PlantDetailViewModel = viewModel { PlantDetailViewModel(plantId) }
+    isInteractive: Boolean = true
 ) {
-    val plant by viewModel.plant.collectAsState()
-    val deviceStatus by viewModel.deviceStatus.collectAsState()
-    val statusError by viewModel.statusError.collectAsState()
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(plant?.name ?: "Plant Details") },
+                title = { Text(uiState.plant?.name ?: "Plant Details") },
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text("\u2190 Back")
@@ -42,7 +36,7 @@ fun PlantDetailScreen(
             )
         }
     ) { padding ->
-        val currentPlant = plant
+        val currentPlant = uiState.plant
         if (currentPlant == null) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -88,10 +82,27 @@ fun PlantDetailScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Device status card — only show when this plant matches the device
-                val isMatchingPlant = deviceStatus != null && deviceStatus!!.plantId == currentPlant.id
+                // Error card — show when there's an error and plant doesn't match device
+                if (uiState.statusError != null && !uiState.isMatchingPlant) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            text = uiState.statusError,
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
-                if (isMatchingPlant) {
+                // Device status card — only show when this plant matches the device
+                if (uiState.isMatchingPlant) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
@@ -111,23 +122,19 @@ fun PlantDetailScreen(
                                         text = "\uD83D\uDCA7",
                                         style = MaterialTheme.typography.headlineLarge
                                     )
-                                    Text("Water: ${deviceStatus!!.water}")
+                                    Text("Water: ${uiState.deviceStatus!!.water}")
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
                                         text = "\uD83D\uDCC5",
                                         style = MaterialTheme.typography.headlineLarge
                                     )
-                                    Text("Days: ${deviceStatus!!.days}")
+                                    Text("Days: ${uiState.deviceStatus!!.days}")
                                 }
                             }
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            val nowEpoch = kotlin.time.Clock.System.now().epochSeconds
-                            val wateredRecently = deviceStatus!!.lastWaterTimestamp > 0 &&
-                                (nowEpoch - deviceStatus!!.lastWaterTimestamp) < 86400
-
-                            if (wateredRecently) {
+                            if (uiState.wateredRecently) {
                                 Button(
                                     onClick = {},
                                     modifier = Modifier.fillMaxWidth(),
@@ -138,9 +145,10 @@ fun PlantDetailScreen(
                                 }
                             } else {
                                 Button(
-                                    onClick = { viewModel.water() },
+                                    onClick = onWater,
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
+                                    shape = RoundedCornerShape(8.dp),
+                                    enabled = isInteractive
                                 ) {
                                     Text("\uD83D\uDCA7 Water Plant")
                                 }
@@ -154,7 +162,8 @@ fun PlantDetailScreen(
                 Button(
                     onClick = { onSendClick(currentPlant.id) },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = uiState.isDeviceConnected && isInteractive
                 ) {
                     Text("Send to Device")
                 }

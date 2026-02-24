@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.eldiem.plantasia.data.ImageConverter
 import org.eldiem.plantasia.di.AppDependencies
@@ -17,15 +18,17 @@ sealed class UploadState {
     data class Error(val message: String) : UploadState()
 }
 
+data class UploadUiState(
+    val plant: Plant? = null,
+    val uploadState: UploadState = UploadState.Preparing
+)
+
 class UploadViewModel(private val plantId: String) : ViewModel() {
     private val plantRepository = AppDependencies.plantRepository
     private val deviceRepository = AppDependencies.deviceRepository
 
-    private val _plant = MutableStateFlow<Plant?>(null)
-    val plant: StateFlow<Plant?> = _plant
-
-    private val _uploadState = MutableStateFlow<UploadState>(UploadState.Preparing)
-    val uploadState: StateFlow<UploadState> = _uploadState
+    private val _uiState = MutableStateFlow(UploadUiState())
+    val uiState: StateFlow<UploadUiState> = _uiState
 
     private var lastBitmap: ImageBitmap? = null
 
@@ -35,7 +38,7 @@ class UploadViewModel(private val plantId: String) : ViewModel() {
 
     private fun loadPlant() {
         viewModelScope.launch {
-            _plant.value = plantRepository.getPlant(plantId)
+            _uiState.update { it.copy(plant = plantRepository.getPlant(plantId)) }
         }
     }
 
@@ -43,14 +46,14 @@ class UploadViewModel(private val plantId: String) : ViewModel() {
         lastBitmap = bitmap
         viewModelScope.launch {
             try {
-                _uploadState.value = UploadState.Uploading(0f)
+                _uiState.update { it.copy(uploadState = UploadState.Uploading(0f)) }
                 val rgb565Data = ImageConverter.bitmapToRgb565(bitmap)
                 deviceRepository.uploadPlant(rgb565Data, plantId) { progress ->
-                    _uploadState.value = UploadState.Uploading(progress)
+                    _uiState.update { it.copy(uploadState = UploadState.Uploading(progress)) }
                 }
-                _uploadState.value = UploadState.Success
+                _uiState.update { it.copy(uploadState = UploadState.Success) }
             } catch (e: Exception) {
-                _uploadState.value = UploadState.Error(e.message ?: "Upload failed")
+                _uiState.update { it.copy(uploadState = UploadState.Error(e.message ?: "Upload failed")) }
             }
         }
     }
