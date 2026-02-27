@@ -35,7 +35,6 @@ fun CatalogueScreen(
     onCheckConnection: () -> Unit
 ) {
     LaunchedEffect(Unit) {
-        println("checking connection")
         onCheckConnection()
     }
 
@@ -44,13 +43,28 @@ fun CatalogueScreen(
             TopAppBar(
                 title = { Text("Plantasia") },
                 actions = {
-                    IconButton(onClick = onConnectionClick) {
-                        val tint = when (uiState.connectionState) {
-                            is ConnectionState.Connected -> MaterialTheme.colorScheme.primary
-                            is ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiary
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                        Text("\u26A1", color = tint)
+                    val (pillColor, pillText) = when (uiState.connectionState) {
+                        is ConnectionState.Connected -> MaterialTheme.colorScheme.primaryContainer to "Connected"
+                        is ConnectionState.Connecting -> MaterialTheme.colorScheme.tertiaryContainer to "Connecting..."
+                        else -> MaterialTheme.colorScheme.surfaceVariant to "Disconnected"
+                    }
+                    val pillTextColor = when (uiState.connectionState) {
+                        is ConnectionState.Connected -> MaterialTheme.colorScheme.onPrimaryContainer
+                        is ConnectionState.Connecting -> MaterialTheme.colorScheme.onTertiaryContainer
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Surface(
+                        onClick = onConnectionClick,
+                        modifier = Modifier.padding(end = 12.dp),
+                        color = pillColor,
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(
+                            text = pillText,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = pillTextColor
+                        )
                     }
                 }
             )
