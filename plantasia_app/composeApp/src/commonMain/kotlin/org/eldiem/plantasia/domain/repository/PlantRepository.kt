@@ -5,4 +5,6 @@ import org.eldiem.plantasia.domain.model.Plant
 interface PlantRepository {
     suspend fun getPlants(): List<Plant>
     suspend fun getPlant(id: String): Plant?
+    suspend fun addPlant(plant: Plant, imageBytes: ByteArray)
+    fun getCustomPlantImage(plantId: String): ByteArray?
 }

@@ -13,3 +13,9 @@ object ConnectionRoute
 
 @Serializable
 data class UploadRoute(val plantId: String)
+
+@Serializable
+object CreatePlantRoute
+
+@Serializable
+object PixelDrawRoute

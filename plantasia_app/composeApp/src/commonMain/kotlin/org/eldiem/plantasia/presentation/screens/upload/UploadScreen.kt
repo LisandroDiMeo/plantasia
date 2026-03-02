@@ -9,6 +9,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.dp
+import org.eldiem.plantasia.di.AppDependencies
+import org.eldiem.plantasia.presentation.components.decodeByteArrayToImageBitmap
 import org.eldiem.plantasia.presentation.screens.catalogue.plantDrawableMap
 import org.jetbrains.compose.resources.imageResource
 
@@ -21,15 +23,28 @@ fun UploadScreen(
     onDone: () -> Unit,
     isInteractive: Boolean = true
 ) {
-    // Load the bitmap once and trigger upload
     val drawableRes = uiState.plant?.imageRes?.let { plantDrawableMap[it] }
+    val customBitmap = if (drawableRes == null && uiState.plant?.imageRes?.startsWith("custom_") == true) {
+        remember(uiState.plant.id) {
+            AppDependencies.plantRepository.getCustomPlantImage(uiState.plant.id)?.let {
+                decodeByteArrayToImageBitmap(it)
+            }
+        }
+    } else null
+
     var uploadStarted by remember { mutableStateOf(false) }
 
-    if (drawableRes != null && !uploadStarted) {
-        val bitmap: ImageBitmap = imageResource(drawableRes)
-        LaunchedEffect(bitmap) {
-            uploadStarted = true
-            onUpload(bitmap)
+    if (!uploadStarted) {
+        val bitmap: ImageBitmap? = when {
+            drawableRes != null -> imageResource(drawableRes)
+            customBitmap != null -> customBitmap
+            else -> null
+        }
+        if (bitmap != null) {
+            LaunchedEffect(bitmap) {
+                uploadStarted = true
+                onUpload(bitmap)
+            }
         }
     }
 
@@ -58,6 +73,12 @@ fun UploadScreen(
                 if (drawableRes != null) {
                     Image(
                         bitmap = imageResource(drawableRes),
+                        contentDescription = it.name,
+                        modifier = Modifier.size(120.dp)
+                    )
+                } else if (customBitmap != null) {
+                    Image(
+                        bitmap = customBitmap,
                         contentDescription = it.name,
                         modifier = Modifier.size(120.dp)
                     )

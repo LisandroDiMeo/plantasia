@@ -1,8 +1,6 @@
 package org.eldiem.plantasia.presentation.navigation
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -11,9 +9,14 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import org.eldiem.plantasia.presentation.components.ImagePicker
+import org.eldiem.plantasia.presentation.components.decodeByteArrayToImageBitmap
 import org.eldiem.plantasia.presentation.screens.catalogue.CatalogueScreen
 import org.eldiem.plantasia.presentation.screens.catalogue.CatalogueViewModel
 import org.eldiem.plantasia.presentation.screens.connection.ConnectionScreen
+import org.eldiem.plantasia.presentation.screens.create.CreatePlantScreen
+import org.eldiem.plantasia.presentation.screens.create.CreatePlantViewModel
+import org.eldiem.plantasia.presentation.screens.create.PixelDrawScreen
 import org.eldiem.plantasia.presentation.screens.detail.PlantDetailScreen
 import org.eldiem.plantasia.presentation.screens.detail.PlantDetailViewModel
 import org.eldiem.plantasia.presentation.screens.upload.UploadScreen
@@ -40,7 +43,10 @@ fun PlantasiaNavHost(
                 onConnectionClick = {
                     navController.navigate(ConnectionRoute)
                 },
-                onCheckConnection = vm::checkConnection
+                onCheckConnection = vm::checkConnection,
+                onCreatePlant = {
+                    navController.navigate(CreatePlantRoute)
+                }
             )
         }
         composable<PlantDetailRoute> { backStackEntry ->
@@ -80,6 +86,62 @@ fun PlantasiaNavHost(
                     navController.popBackStack(CatalogueRoute, inclusive = false)
                 },
                 isInteractive = isInteractive
+            )
+        }
+        composable<CreatePlantRoute> { backStackEntry ->
+            val vm = viewModel { CreatePlantViewModel() }
+            val uiState by vm.uiState.collectAsState()
+
+            // Handle drawn image coming back from PixelDrawScreen
+            val savedStateHandle = backStackEntry.savedStateHandle
+            LaunchedEffect(Unit) {
+                savedStateHandle.getStateFlow<ByteArray?>("drawnImageBytes", null)
+                    .collect { bytes ->
+                        if (bytes != null) {
+                            val bitmap = decodeByteArrayToImageBitmap(bytes)
+                            if (bitmap != null) {
+                                vm.onImageSelected(bytes, bitmap)
+                            }
+                            savedStateHandle.remove<ByteArray>("drawnImageBytes")
+                        }
+                    }
+            }
+
+            ImagePicker(
+                show = uiState.showImagePicker,
+                onImagePicked = { bytes ->
+                    vm.dismissImagePicker()
+                    val bitmap = decodeByteArrayToImageBitmap(bytes)
+                    if (bitmap != null) {
+                        vm.onImageSelected(bytes, bitmap)
+                    }
+                },
+                onDismiss = { vm.dismissImagePicker() }
+            )
+
+            CreatePlantScreen(
+                uiState = uiState,
+                onNameChange = vm::onNameChange,
+                onDescriptionChange = vm::onDescriptionChange,
+                onUploadImage = { vm.showImagePicker() },
+                onDrawImage = {
+                    navController.navigate(PixelDrawRoute)
+                },
+                onSave = vm::save,
+                onBack = { navController.popBackStack() },
+                onSaved = {
+                    navController.popBackStack(CatalogueRoute, inclusive = false)
+                }
+            )
+        }
+        composable<PixelDrawRoute> {
+            PixelDrawScreen(
+                onDone = { pngBytes ->
+                    // Pass the drawn image back to CreatePlantScreen via savedStateHandle
+                    navController.previousBackStackEntry?.savedStateHandle?.set("drawnImageBytes", pngBytes)
+                    navController.popBackStack()
+                },
+                onBack = { navController.popBackStack() }
             )
         }
     }

@@ -1,5 +1,7 @@
 package org.eldiem.plantasia.di
 
+import org.eldiem.plantasia.data.FileStorage
+import org.eldiem.plantasia.data.datasource.CustomPlantStorage
 import org.eldiem.plantasia.data.datasource.DeviceApi
 import org.eldiem.plantasia.data.datasource.PlantCatalogueDataSource
 import org.eldiem.plantasia.data.repository.DeviceRepositoryImpl
@@ -12,7 +14,12 @@ object AppDependencies {
     private val deviceApi by lazy { DeviceApi() }
     private val plantCatalogueDataSource by lazy { PlantCatalogueDataSource() }
 
-    val plantRepository: PlantRepository by lazy { PlantRepositoryImpl(plantCatalogueDataSource) }
+    lateinit var fileStorage: FileStorage
+    private val customPlantStorage by lazy { CustomPlantStorage(fileStorage) }
+
+    val plantRepository: PlantRepository by lazy {
+        PlantRepositoryImpl(plantCatalogueDataSource, customPlantStorage)
+    }
     val deviceRepository: DeviceRepository by lazy { DeviceRepositoryImpl(deviceApi) }
 
     lateinit var wifiConnector: WifiConnector

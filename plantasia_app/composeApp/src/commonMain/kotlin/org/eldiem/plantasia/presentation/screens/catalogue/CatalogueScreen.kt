@@ -10,14 +10,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.eldiem.plantasia.di.AppDependencies
 import org.eldiem.plantasia.domain.model.ConnectionState
 import org.eldiem.plantasia.domain.model.Plant
+import org.eldiem.plantasia.presentation.components.decodeByteArrayToImageBitmap
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import plantasia.composeapp.generated.resources.Res
@@ -32,7 +36,8 @@ fun CatalogueScreen(
     uiState: CatalogueUiState,
     onPlantClick: (String) -> Unit,
     onConnectionClick: () -> Unit,
-    onCheckConnection: () -> Unit
+    onCheckConnection: () -> Unit,
+    onCreatePlant: () -> Unit = {}
 ) {
     LaunchedEffect(Unit) {
         onCheckConnection()
@@ -68,6 +73,11 @@ fun CatalogueScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onCreatePlant) {
+                Text("+", style = MaterialTheme.typography.headlineMedium)
+            }
         }
     ) { padding ->
         if (uiState.isLoading) {
@@ -108,8 +118,16 @@ private fun PlantCard(plant: Plant, isOnDevice: Boolean, onClick: () -> Unit) {
     ) {
         Column {
             val drawableRes = plantDrawableMap[plant.imageRes]
+            val customBitmap = if (drawableRes == null && plant.imageRes.startsWith("custom_")) {
+                remember(plant.id) {
+                    AppDependencies.plantRepository.getCustomPlantImage(plant.id)?.let {
+                        decodeByteArrayToImageBitmap(it)
+                    }
+                }
+            } else null
+
             if (drawableRes != null) {
-                Box {
+                PlantImageBox(isOnDevice = isOnDevice) {
                     Image(
                         painter = painterResource(drawableRes),
                         contentDescription = plant.name,
@@ -119,20 +137,18 @@ private fun PlantCard(plant: Plant, isOnDevice: Boolean, onClick: () -> Unit) {
                             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
                         contentScale = ContentScale.Crop
                     )
-                    if (isOnDevice) {
-                        Surface(
-                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                "On device",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
+                }
+            } else if (customBitmap != null) {
+                PlantImageBox(isOnDevice = isOnDevice) {
+                    Image(
+                        bitmap = customBitmap,
+                        contentDescription = plant.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                        contentScale = ContentScale.Crop
+                    )
                 }
             } else {
                 Box(
@@ -158,6 +174,27 @@ private fun PlantCard(plant: Plant, isOnDevice: Boolean, onClick: () -> Unit) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlantImageBox(isOnDevice: Boolean, content: @Composable () -> Unit) {
+    Box {
+        content()
+        if (isOnDevice) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    "On device",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
         }

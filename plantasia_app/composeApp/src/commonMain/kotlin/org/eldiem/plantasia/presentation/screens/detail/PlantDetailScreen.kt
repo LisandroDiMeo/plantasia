@@ -7,11 +7,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import org.eldiem.plantasia.di.AppDependencies
+import org.eldiem.plantasia.presentation.components.decodeByteArrayToImageBitmap
 import org.eldiem.plantasia.presentation.screens.catalogue.plantDrawableMap
 import org.jetbrains.compose.resources.painterResource
 
@@ -54,9 +57,26 @@ fun PlantDetailScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 val drawableRes = plantDrawableMap[currentPlant.imageRes]
+                val customBitmap = if (drawableRes == null && currentPlant.imageRes.startsWith("custom_")) {
+                    remember(currentPlant.id) {
+                        AppDependencies.plantRepository.getCustomPlantImage(currentPlant.id)?.let {
+                            decodeByteArrayToImageBitmap(it)
+                        }
+                    }
+                } else null
+
                 if (drawableRes != null) {
                     Image(
                         painter = painterResource(drawableRes),
+                        contentDescription = currentPlant.name,
+                        modifier = Modifier
+                            .size(240.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else if (customBitmap != null) {
+                    Image(
+                        bitmap = customBitmap,
                         contentDescription = currentPlant.name,
                         modifier = Modifier
                             .size(240.dp)
@@ -82,7 +102,6 @@ fun PlantDetailScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Error card — show when there's an error and plant doesn't match device
                 if (uiState.statusError != null && !uiState.isMatchingPlant) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -101,7 +120,6 @@ fun PlantDetailScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // Device status card — only show when this plant matches the device
                 if (uiState.isMatchingPlant) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),

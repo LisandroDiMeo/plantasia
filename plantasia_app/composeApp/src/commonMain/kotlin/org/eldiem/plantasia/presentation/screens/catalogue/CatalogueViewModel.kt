@@ -37,6 +37,7 @@ class CatalogueViewModel : ViewModel() {
     }
 
     fun checkConnection() {
+        loadPlants()
         if (!AppDependencies.isWifiConnectorInitialized) return
         viewModelScope.launch {
             val state = AppDependencies.wifiConnector.getConnectionState()
