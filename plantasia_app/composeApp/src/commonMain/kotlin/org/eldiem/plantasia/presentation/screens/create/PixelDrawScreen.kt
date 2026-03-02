@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,8 +19,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -36,6 +37,9 @@ private val presetColors = listOf(
     Color.Yellow, Color(0xFF00CC00), Color(0xFF0066FF), Color(0xFF9900CC),
     Color(0xFF663300), Color(0xFFFF69B4), Color.Gray, Color(0xFF00CCCC),
 )
+
+private fun checkerColor(x: Int, y: Int): Color =
+    if ((x + y) % 2 == 0) Color(0xFFCCCCCC) else Color(0xFFFFFFFF)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,16 +57,48 @@ fun PixelDrawScreen(
     val undoStack = remember { mutableStateListOf<List<Pair<Int, Int>>>() }
     val redoStack = remember { mutableStateListOf<List<Pair<Int, Int>>>() }
 
-    // Current stroke accumulator
-    val currentStrokeDiff = remember { mutableStateListOf<Pair<Int, Int>>() }
+    // Current stroke accumulator - plain list, no need for observable state
+    val currentStrokeDiff = remember { mutableListOf<Pair<Int, Int>>() }
 
     // Zoom/pan state
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
 
-    // Trigger recomposition on pixel changes
+    // Trigger canvas redraw on pixel changes
     var pixelVersion by remember { mutableIntStateOf(0) }
+
+    // Pre-rendered bitmap buffer — single drawImage call instead of 57K+ drawRects
+    val bitmapBuffer = remember {
+        val bmp = ImageBitmap(CANVAS_SIZE, CANVAS_SIZE)
+        val canvas = androidx.compose.ui.graphics.Canvas(bmp)
+        val paint = Paint()
+        for (y in 0 until CANVAS_SIZE) {
+            for (x in 0 until CANVAS_SIZE) {
+                paint.color = checkerColor(x, y)
+                canvas.drawRect(
+                    x.toFloat(), y.toFloat(),
+                    (x + 1).toFloat(), (y + 1).toFloat(),
+                    paint
+                )
+            }
+        }
+        bmp
+    }
+    val bitmapCanvas = remember { androidx.compose.ui.graphics.Canvas(bitmapBuffer) }
+    val bitmapPaint = remember { Paint() }
+
+    // Last pixel position for Bresenham line interpolation
+    val lastPixel = remember { intArrayOf(-1, -1) }
+
+    fun updateBitmapPixel(x: Int, y: Int, color: Int) {
+        bitmapPaint.color = if (color == TRANSPARENT) checkerColor(x, y) else Color(color)
+        bitmapCanvas.drawRect(
+            x.toFloat(), y.toFloat(),
+            (x + 1).toFloat(), (y + 1).toFloat(),
+            bitmapPaint
+        )
+    }
 
     fun applyPixel(x: Int, y: Int, color: Int) {
         if (x < 0 || x >= CANVAS_SIZE || y < 0 || y >= CANVAS_SIZE) return
@@ -70,6 +106,7 @@ fun PixelDrawScreen(
         if (pixels[idx] != color) {
             currentStrokeDiff.add(idx to pixels[idx])
             pixels[idx] = color
+            updateBitmapPixel(x, y, color)
         }
     }
 
@@ -78,6 +115,31 @@ fun PixelDrawScreen(
         for (dy in 0 until brushSize) {
             for (dx in 0 until brushSize) {
                 applyPixel(cx - half + dx, cy - half + dy, color)
+            }
+        }
+    }
+
+    // Bresenham's line algorithm for smooth continuous line drawing
+    fun drawPixelLine(x0: Int, y0: Int, x1: Int, y1: Int, color: Int) {
+        var dx = abs(x1 - x0)
+        var dy = -abs(y1 - y0)
+        val sx = if (x0 < x1) 1 else -1
+        val sy = if (y0 < y1) 1 else -1
+        var err = dx + dy
+        var cx = x0
+        var cy = y0
+
+        while (true) {
+            applyBrush(cx, cy, color)
+            if (cx == x1 && cy == y1) break
+            val e2 = 2 * err
+            if (e2 >= dy) {
+                err += dy
+                cx += sx
+            }
+            if (e2 <= dx) {
+                err += dx
+                cy += sy
             }
         }
     }
@@ -97,6 +159,7 @@ fun PixelDrawScreen(
         val reverseDiff = diff.map { (idx, _) -> idx to pixels[idx] }
         for ((idx, oldColor) in diff) {
             pixels[idx] = oldColor
+            updateBitmapPixel(idx % CANVAS_SIZE, idx / CANVAS_SIZE, oldColor)
         }
         redoStack.add(reverseDiff)
         pixelVersion++
@@ -108,6 +171,7 @@ fun PixelDrawScreen(
         val reverseDiff = diff.map { (idx, _) -> idx to pixels[idx] }
         for ((idx, oldColor) in diff) {
             pixels[idx] = oldColor
+            updateBitmapPixel(idx % CANVAS_SIZE, idx / CANVAS_SIZE, oldColor)
         }
         undoStack.add(reverseDiff)
         pixelVersion++
@@ -127,6 +191,7 @@ fun PixelDrawScreen(
             if (pixels[idx] != targetColor) continue
             currentStrokeDiff.add(idx to pixels[idx])
             pixels[idx] = fillColor
+            updateBitmapPixel(x, y, fillColor)
             queue.add((x + 1) to y)
             queue.add((x - 1) to y)
             queue.add(x to (y + 1))
@@ -143,7 +208,7 @@ fun PixelDrawScreen(
 
     fun exportToPng(): ByteArray {
         val imageBitmap = ImageBitmap(CANVAS_SIZE, CANVAS_SIZE)
-        val canvas = Canvas(imageBitmap)
+        val canvas = androidx.compose.ui.graphics.Canvas(imageBitmap)
         val paint = Paint()
         for (y in 0 until CANVAS_SIZE) {
             for (x in 0 until CANVAS_SIZE) {
@@ -214,7 +279,6 @@ fun PixelDrawScreen(
                     .fillMaxWidth()
                     .background(Color(0xFFE0E0E0))
             ) {
-                var canvasIntSize by remember { mutableStateOf(IntSize.Zero) }
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
@@ -225,7 +289,12 @@ fun PixelDrawScreen(
                                 offsetY += pan.y
                             }
                         }
-                        .pointerInput(currentTool, currentColor, brushSize, pixelVersion) {
+                        .pointerInput(currentTool) {
+                            // Only currentTool as key — switching between Fill/Pen/Eraser
+                            // needs to restart gesture detection. Color and brush size are
+                            // read dynamically from state inside the handlers.
+                            // pixelVersion must NOT be a key here — it changes on every
+                            // pixel drawn, which would restart and cancel the drag gesture.
                             if (currentTool == DrawTool.Fill) {
                                 detectTapGestures { pos ->
                                     val (px, py) = screenToPixel(pos, size)
@@ -238,68 +307,59 @@ fun PixelDrawScreen(
                                         val (px, py) = screenToPixel(pos, size)
                                         val c = if (currentTool == DrawTool.Eraser) TRANSPARENT else currentColor.toArgb()
                                         applyBrush(px, py, c)
+                                        lastPixel[0] = px
+                                        lastPixel[1] = py
                                         pixelVersion++
                                     },
                                     onDrag = { change, _ ->
                                         change.consume()
                                         val (px, py) = screenToPixel(change.position, size)
                                         val c = if (currentTool == DrawTool.Eraser) TRANSPARENT else currentColor.toArgb()
-                                        applyBrush(px, py, c)
+                                        // Interpolate between last and current position
+                                        if (lastPixel[0] >= 0) {
+                                            drawPixelLine(lastPixel[0], lastPixel[1], px, py, c)
+                                        } else {
+                                            applyBrush(px, py, c)
+                                        }
+                                        lastPixel[0] = px
+                                        lastPixel[1] = py
                                         pixelVersion++
                                     },
                                     onDragEnd = {
+                                        lastPixel[0] = -1
+                                        lastPixel[1] = -1
                                         commitStroke()
                                     }
                                 )
                             }
                         }
                 ) {
-                    canvasIntSize = IntSize(size.width.roundToInt(), size.height.roundToInt())
-                    // Force dependency on pixelVersion for recomposition
+                    // Read pixelVersion to trigger redraw when pixels change
                     pixelVersion
 
-                    val cellW = size.width / CANVAS_SIZE * scale
-                    val cellH = size.height / CANVAS_SIZE * scale
+                    val scaledW = size.width * scale
+                    val scaledH = size.height * scale
 
-                    // Determine visible pixel range for performance
-                    val startX = max(0, ((-offsetX) / cellW).toInt())
-                    val endX = min(CANVAS_SIZE, ((size.width - offsetX) / cellW).toInt() + 1)
-                    val startY = max(0, ((-offsetY) / cellH).toInt())
-                    val endY = min(CANVAS_SIZE, ((size.height - offsetY) / cellH).toInt() + 1)
-
-                    // Draw checkerboard background for transparency
-                    for (y in startY until endY) {
-                        for (x in startX until endX) {
-                            val left = x * cellW + offsetX
-                            val top = y * cellH + offsetY
-                            val bgColor = if ((x + y) % 2 == 0) Color(0xFFCCCCCC) else Color(0xFFFFFFFF)
-                            drawRect(
-                                color = bgColor,
-                                topLeft = Offset(left, top),
-                                size = androidx.compose.ui.geometry.Size(cellW, cellH)
-                            )
-                        }
-                    }
-
-                    // Draw pixels
-                    for (y in startY until endY) {
-                        for (x in startX until endX) {
-                            val c = pixels[y * CANVAS_SIZE + x]
-                            if (c != TRANSPARENT) {
-                                val left = x * cellW + offsetX
-                                val top = y * cellH + offsetY
-                                drawRect(
-                                    color = Color(c),
-                                    topLeft = Offset(left, top),
-                                    size = androidx.compose.ui.geometry.Size(cellW, cellH)
-                                )
-                            }
-                        }
-                    }
+                    // Single drawImage call replaces 57K+ individual drawRect calls
+                    drawImage(
+                        image = bitmapBuffer,
+                        srcOffset = IntOffset.Zero,
+                        srcSize = IntSize(CANVAS_SIZE, CANVAS_SIZE),
+                        dstOffset = IntOffset(offsetX.roundToInt(), offsetY.roundToInt()),
+                        dstSize = IntSize(scaledW.roundToInt(), scaledH.roundToInt()),
+                        filterQuality = FilterQuality.None // Nearest-neighbor for crisp pixels
+                    )
 
                     // Draw grid lines when zoomed in enough
                     if (scale > 4f) {
+                        val cellW = size.width / CANVAS_SIZE * scale
+                        val cellH = size.height / CANVAS_SIZE * scale
                         val gridColor = Color(0x22000000)
+                        val startX = max(0, ((-offsetX) / cellW).toInt())
+                        val endX = min(CANVAS_SIZE, ((size.width - offsetX) / cellW).toInt() + 1)
+                        val startY = max(0, ((-offsetY) / cellH).toInt())
+                        val endY = min(CANVAS_SIZE, ((size.height - offsetY) / cellH).toInt() + 1)
+
                         for (x in startX..endX) {
                             val xPos = x * cellW + offsetX
                             drawLine(gridColor, Offset(xPos, startY * cellH + offsetY), Offset(xPos, endY * cellH + offsetY))
