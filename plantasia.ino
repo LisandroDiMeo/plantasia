@@ -379,7 +379,9 @@ void handleUpdate() {
 
   refreshStats();
 
-  String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays) + "}";
+  String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays)
+    + ",\"plantId\":\"" + plantId + "\""
+    + ",\"lastWaterTimestamp\":" + String(lastWaterTimestamp) + "}";
   server.send(200, "application/json", json);
 
   Serial.print("Updated - water: ");
@@ -439,6 +441,7 @@ void handleWater() {
   refreshStats();
 
   String json = "{\"water\":" + String(waterLevel) + ",\"days\":" + String(calendarDays)
+    + ",\"plantId\":\"" + plantId + "\""
     + ",\"lastWaterTimestamp\":" + String(lastWaterTimestamp) + "}";
   server.send(200, "application/json", json);
 }
