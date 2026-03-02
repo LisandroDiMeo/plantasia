@@ -65,21 +65,10 @@ class PlantDetailViewModel(private val plantId: String) : ViewModel() {
         }
     }
 
-    fun updateStatus(water: Int, days: Int) {
-        viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(deviceStatus = deviceRepository.updateStatus(water, days), statusError = null) }
-            } catch (_: Exception) {
-                _uiState.update { it.copy(statusError = "Failed to update status") }
-            }
-            updateDerivedState()
-        }
-    }
-
     private fun updateDerivedState() {
         _uiState.update { s ->
             val connected = s.deviceStatus != null && s.statusError == null
-            val matching = connected && s.plant != null && s.deviceStatus!!.plantId == s.plant.id
+            val matching = connected && s.plant != null && s.deviceStatus.plantId == s.plant.id
             val nowEpoch = kotlin.time.Clock.System.now().epochSeconds
             val watered = s.deviceStatus != null && s.deviceStatus.lastWaterTimestamp > 0
                 && (nowEpoch - s.deviceStatus.lastWaterTimestamp) < 86400

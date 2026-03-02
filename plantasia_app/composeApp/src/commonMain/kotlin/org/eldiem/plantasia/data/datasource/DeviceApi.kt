@@ -47,10 +47,8 @@ class DeviceApi {
                 parameters.append("plantId", plantId)
             }
             onUpload { bytesSentTotal, contentLength ->
-                if (contentLength != null) {
-                    if (contentLength > 0) {
-                        onProgress(bytesSentTotal.toFloat() / contentLength.toFloat())
-                    }
+                if (contentLength != null && contentLength > 0) {
+                    onProgress(bytesSentTotal.toFloat() / contentLength.toFloat())
                 }
             }
         }

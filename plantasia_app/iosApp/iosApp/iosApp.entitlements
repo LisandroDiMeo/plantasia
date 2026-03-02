@@ -2,9 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<key>com.apple.developer.networking.HotspotConfiguration</key>
 	<true/>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Plantasia needs local network access to connect to your plant device.</string>
 </dict>
 </plist>

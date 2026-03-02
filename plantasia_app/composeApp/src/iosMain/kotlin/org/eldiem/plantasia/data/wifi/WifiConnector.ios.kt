@@ -11,8 +11,8 @@ actual class WifiConnector {
 
     actual suspend fun connect(ssid: String, password: String): ConnectionState {
         return suspendCancellableCoroutine { continuation ->
-            val configuration = NEHotspotConfiguration(ssid, password, false)
-            configuration.joinOnce = true
+            val configuration = NEHotspotConfiguration(sSID = ssid, passphrase = password, isWEP = false)
+            configuration.setJoinOnce(true)
 
             NEHotspotConfigurationManager.sharedManager.applyConfiguration(configuration) { error ->
                 if (error == null) {
